@@ -49,8 +49,7 @@ LDFLAGS := -specs=3dsx.specs $(ARCH) -Wl,-Map,$(notdir $@).map
 
 LIBPATHS := $(foreach dir,$(LIBDIRS),-L$(dir)/lib)
 
-LIBS := -lcurl -lmbedtls -lmbedx509 -lmbedcrypto -lz -lctru -lm -lcitro2d -lcitro3d
-
+LIBS := -lcitro2d -lcitro3d -lcurl -lmbedtls -lmbedx509 -lmbedcrypto -lz -lctru -lm
 #---------------------------------------------------------------------------------
 # Build
 #---------------------------------------------------------------------------------
