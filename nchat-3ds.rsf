@@ -1,11 +1,11 @@
 BasicInfo:
-  Title                   : "BVG Navigator"
-  ProductCode             : "CTR-P-BVGN"
+  Title                   : "nchat 3DS"
+  ProductCode             : "CTR-P-NCHA"
   Logo                    : Homebrew
 
 TitleInfo:
   Category                : Application
-  UniqueId                : 0xF80B6
+  UniqueId                : 0xF80B7
 
 Option:
   UseOnSD                 : true
