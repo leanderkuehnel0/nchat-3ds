@@ -6,7 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-static char g_bridge_url[256] = "http://192.168.168.145:8080";
+static char g_bridge_url[256] = "http://192.168.178.145:8080";
 
 void wa_set_bridge_url(const char* url)
 {
