@@ -14,7 +14,7 @@ jobs:
       contents: write
 
     container:
-      image: devkitpro/3dsdev
+      image: devkitpro/devkitarm
 
     steps:
       - name: Checkout repository
