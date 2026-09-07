@@ -1,15 +1,15 @@
 #---------------------------------------------------------------------------------
 # Basic project information
 #---------------------------------------------------------------------------------
-TARGET      := bvg-navigator
+TARGET      := nchat-3ds
 BUILD       := build
 SOURCES     := source
 INCLUDES    := include
 GRAPHICS    := gfx
 
-APP_TITLE   := BVG Navigator
+APP_TITLE   := nchat 3DS
 APP_AUTHOR  := Homebrew
-APP_DESCRIPTION := Berlin public transport navigation
+APP_DESCRIPTION := WhatsApp client for 3DS
 
 #---------------------------------------------------------------------------------
 # devkitPro configuration

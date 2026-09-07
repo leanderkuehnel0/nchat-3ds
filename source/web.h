@@ -11,5 +11,6 @@
    request failed before a response). If err_out is non-NULL it receives the
    failing libcurl result code when the request failed. */
 char* http_get(const char* url, u32* status_out, u32* err_out);
+char* http_post(const char* url, const char* json_body, u32* status_out, u32* err_out);
 
 #endif

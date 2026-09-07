@@ -127,3 +127,82 @@ char* http_get(const char* url, u32* status_out, u32* err_out)
 
 	return NULL;
 }
+
+char* http_post(const char* url, const char* json_body, u32* status_out, u32* err_out)
+{
+	if (status_out)
+		*status_out = 0;
+	if (err_out)
+		*err_out = 0;
+
+	init_once();
+
+	for (int attempt = 0; attempt < MAX_RETRIES; attempt++)
+	{
+		buf_t b = { NULL, 0, 0 };
+		CURL* c = curl_easy_init();
+		if (!c)
+		{
+			if (err_out)
+				*err_out = 0xFFFFFFFFu;
+			return NULL;
+		}
+
+		struct curl_slist* headers = NULL;
+		headers = curl_slist_append(headers, "Content-Type: application/json");
+		headers = curl_slist_append(headers, "Accept: application/json");
+
+		curl_easy_setopt(c, CURLOPT_URL, url);
+		curl_easy_setopt(c, CURLOPT_HTTPHEADER, headers);
+		curl_easy_setopt(c, CURLOPT_POSTFIELDS, json_body);
+		curl_easy_setopt(c, CURLOPT_FOLLOWLOCATION, 1L);
+		curl_easy_setopt(c, CURLOPT_MAXREDIRS, 4L);
+		curl_easy_setopt(c, CURLOPT_CONNECTTIMEOUT, 15L);
+		curl_easy_setopt(c, CURLOPT_TIMEOUT, 45L);
+		curl_easy_setopt(c, CURLOPT_USERAGENT, "nchat-3ds/0.1");
+		curl_easy_setopt(c, CURLOPT_SSL_VERIFYPEER, 0L);
+		curl_easy_setopt(c, CURLOPT_SSL_VERIFYHOST, 0L);
+		curl_easy_setopt(c, CURLOPT_WRITEFUNCTION, collect);
+		curl_easy_setopt(c, CURLOPT_WRITEDATA, &b);
+
+		CURLcode rc = curl_easy_perform(c);
+		long status = 0;
+		if (rc == CURLE_OK)
+			curl_easy_getinfo(c, CURLINFO_RESPONSE_CODE, &status);
+		
+		curl_slist_free_all(headers);
+		curl_easy_cleanup(c);
+
+		if (!b.data)
+			b.data = (char*)malloc(1);
+		if (!b.data)
+		{
+			if (err_out)
+				*err_out = 0xFFFFFFFEu;
+			return NULL;
+		}
+
+		if (rc != CURLE_OK)
+		{
+			free(b.data);
+			if (err_out)
+				*err_out = (u32)rc;
+			svcSleepThread(1000000000LL);
+			continue;
+		}
+
+		if (status_out)
+			*status_out = (u32)status;
+
+		if (status >= 400)
+		{
+			free(b.data);
+			return NULL;
+		}
+
+		b.data[b.used] = '\0';
+		return b.data;
+	}
+
+	return NULL;
+}
