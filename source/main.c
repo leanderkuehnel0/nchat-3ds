@@ -27,8 +27,9 @@
 
 #define HEADER_H 34.0f
 #define CHAT_ROW_H 31.0f
-#define MESSAGE_TOP 43.0f
-#define MESSAGE_BOTTOM 198.0f
+#define MESSAGE_TOP 42.0f
+#define MESSAGE_BOTTOM 196.0f
+#define ACTION_TOP 199.0f
 
 static C3D_RenderTarget* g_top_target;
 static C3D_RenderTarget* g_bottom_target;
@@ -59,6 +60,11 @@ static char g_pending_text[WA_TEXT_LEN] = {0};
 static bool g_sync_requested = false;
 
 static u64 g_last_data_update = 0;
+
+/* Conversation touch scrolling state. */
+static int g_message_scroll = 0;
+static bool g_touch_dragging = false;
+static u16 g_touch_last_y = 0;
 
 /* ============================================================
  * Colors
@@ -321,34 +327,14 @@ static void render_top(void)
             );
         }
 
-        /* Avatar circle */
-        C2D_DrawCircleSolid(
-            25, y + 12,
-            0.0f,
-            10.0f,
-            selected
-                ? COL_ACCENT
-                : COL_PANEL_ALT
-        );
-
-        draw_text_center(
-            chat->name[0]
-                ? chat->name
-                : "?",
-            25,
-            y + 3,
-            0.35f,
-            COL_TEXT
-        );
-
         draw_text_clipped(
             chat->name[0]
                 ? chat->name
                 : chat->id,
-            42, y + 4,
+            18, y + 4,
             0.53f,
             COL_TEXT,
-            39
+            46
         );
 
         if (chat->unread > 0)
@@ -389,24 +375,25 @@ static void render_top(void)
     }
 }
 
+static float message_card_height(const WAMessage* msg)
+{
+    return msg->isMe ? 29.0f : 35.0f;
+}
+
 static void draw_message_card(
     const WAMessage* msg,
-    float y,
-    bool compact
+    float y
 )
 {
     const float x =
         msg->isMe ? 102.0f : 8.0f;
 
-    const float w =
-        msg->isMe ? 210.0f : 210.0f;
-
-    const float h =
-        compact ? 28.0f : 34.0f;
+    const float w = 210.0f;
+    const float h = message_card_height(msg);
 
     draw_rect(
         x, y,
-        w, h,
+        w, h - 2.0f,
         msg->isMe
             ? COL_OUTGOING
             : COL_INCOMING
@@ -417,17 +404,17 @@ static void draw_message_card(
         draw_text_clipped(
             msg->sender,
             x + 7,
-            y + 3,
-            0.38f,
+            y + 2,
+            0.36f,
             COL_ACCENT,
-            22
+            24
         );
 
         draw_text_clipped(
             msg->text,
             x + 7,
             y + 15,
-            0.42f,
+            0.40f,
             COL_TEXT,
             34
         );
@@ -437,8 +424,8 @@ static void draw_message_card(
         draw_text_clipped(
             msg->text,
             x + 7,
-            y + 8,
-            0.42f,
+            y + 6,
+            0.40f,
             COL_TEXT,
             34
         );
@@ -477,11 +464,8 @@ static void render_bottom(void)
             0.68f,
             COL_MUTED
         );
-
-        return;
     }
-
-    if (g_loading && g_message_count == 0)
+    else if (g_loading && g_message_count == 0)
     {
         draw_text_center(
             "Loading messages...",
@@ -503,61 +487,129 @@ static void render_bottom(void)
     }
     else
     {
-        int start =
-            g_message_count > 5
-                ? g_message_count - 5
-                : 0;
+        /*
+         * Scroll is counted from the newest message:
+         * 0 = bottom / newest, larger values move upward.
+         */
+        int end =
+            g_message_count -
+            g_message_scroll;
 
-        float y = MESSAGE_TOP;
+        if (end < 0)
+            end = 0;
 
-        for (int i = start;
-             i < g_message_count;
-             ++i)
+        if (end > g_message_count)
+            end = g_message_count;
+
+        /*
+         * Start from a small window before `end`, then trim from
+         * the front if the cards don't fit vertically.
+         */
+        int start = end > 5 ? end - 5 : 0;
+
+        float heights[5];
+        float total = 0.0f;
+
+        int visible_count = 0;
+
+        for (int i = start; i < end; ++i)
         {
-            const WAMessage* msg =
-                &g_messages[i];
+            float h =
+                message_card_height(
+                    &g_messages[i]
+                );
 
-            bool compact =
-                msg->isMe;
+            if (total + h > (MESSAGE_BOTTOM - MESSAGE_TOP))
+                break;
 
+            heights[visible_count++] = h;
+            total += h;
+        }
+
+        /*
+         * Keep the visible messages anchored to the bottom of the
+         * conversation region so the action bar never overlaps them.
+         */
+        float y =
+            MESSAGE_BOTTOM -
+            total;
+
+        for (int n = 0; n < visible_count; ++n)
+        {
             draw_message_card(
-                msg,
-                y,
-                compact
+                &g_messages[start + n],
+                y
             );
 
-            y += compact ? 32.0f : 38.0f;
+            y += heights[n];
+        }
 
-            if (y > MESSAGE_BOTTOM)
-                break;
+        /* Small scroll indicator on the right. */
+        if (g_message_count > visible_count)
+        {
+            float track_top = MESSAGE_TOP;
+            float track_h =
+                MESSAGE_BOTTOM - MESSAGE_TOP;
+
+            float thumb_h =
+                track_h *
+                ((float)visible_count /
+                 (float)g_message_count);
+
+            if (thumb_h < 18.0f)
+                thumb_h = 18.0f;
+
+            float travel =
+                track_h - thumb_h;
+
+            int max_scroll =
+                g_message_count - visible_count;
+
+            float fraction =
+                max_scroll > 0
+                    ? (float)g_message_scroll /
+                      (float)max_scroll
+                    : 0.0f;
+
+            float thumb_y =
+                track_top +
+                travel * fraction;
+
+            draw_rect(
+                314.0f,
+                thumb_y,
+                3.0f,
+                thumb_h,
+                COL_MUTED
+            );
         }
     }
 
-    /* Bottom action bar */
+    /* Bottom action bar. */
     draw_rect(
-        0, 205,
+        0, ACTION_TOP,
         BOT_W,
-        35,
+        BOT_H - ACTION_TOP,
         COL_PANEL
     );
 
     draw_rect(
-        8, 211,
-        92, 23,
+        8, 207,
+        92, 25,
         COL_ACCENT
     );
 
     draw_text_center(
         "A  Reply",
-        54, 216,
+        54, 212,
         0.44f,
         COL_BG
     );
 
     draw_text(
-        "D-pad  Chats",
-        116, 214,
-        0.40f,
+        "Swipe to scroll",
+        112, 211,
+        0.39f,
         COL_MUTED
     );
 
@@ -565,29 +617,20 @@ static void render_bottom(void)
     {
         draw_text_clipped(
             "Sending...",
-            212, 214,
-            0.40f,
+            235, 211,
+            0.36f,
             COL_ACCENT,
-            14
+            12
         );
     }
     else if (g_send_failed)
     {
         draw_text_clipped(
             "Send failed",
-            212, 214,
-            0.40f,
-            COL_ERROR,
-            14
-        );
-    }
-    else if (g_last_data_update != 0)
-    {
-        draw_text(
-            "10s sync",
-            245, 214,
+            235, 211,
             0.36f,
-            COL_MUTED
+            COL_ERROR,
+            12
         );
     }
 }
@@ -793,6 +836,14 @@ static void sync_once(void)
         );
 
         g_message_count = message_count;
+
+        int max_scroll =
+            g_message_count > 5
+                ? g_message_count - 4
+                : 0;
+
+        if (g_message_scroll > max_scroll)
+            g_message_scroll = max_scroll;
     }
 
     g_loading = false;
@@ -855,6 +906,7 @@ static void move_selection(int delta)
         next = 0;
 
     g_selected_chat = next;
+    g_message_scroll = 0;
     g_loading = true;
 
     LightLock_Unlock(&g_data_lock);
@@ -963,12 +1015,91 @@ static void handle_touch(void)
     /*
      * Bottom-screen reply button.
      */
-    if (touch.px >= 8 &&
-        touch.px <= 100 &&
-        touch.py >= 205 &&
-        touch.py <= 240)
+    if (touch.py >= 205 &&
+        touch.py <= 239 &&
+        touch.px >= 8 &&
+        touch.px <= 100)
     {
-        prompt_reply();
+        if (!g_touch_dragging)
+            prompt_reply();
+
+        return;
+    }
+
+    /*
+     * Touch a chat row on the top screen. The 3DS touch panel is
+     * always on the bottom screen, so this is intentionally not
+     * handled here; top-screen chat selection stays on D-pad.
+     */
+}
+
+static void handle_touch_drag(
+    bool touching
+)
+{
+    touchPosition touch;
+
+    if (!touching)
+    {
+        g_touch_dragging = false;
+        return;
+    }
+
+    hidTouchRead(&touch);
+
+    /*
+     * Ignore the action bar and only interpret vertical drags in
+     * the conversation area.
+     */
+    if (touch.py < MESSAGE_TOP ||
+        touch.py > MESSAGE_BOTTOM)
+    {
+        if (!g_touch_dragging)
+            g_touch_last_y = touch.py;
+
+        return;
+    }
+
+    if (!g_touch_dragging)
+    {
+        g_touch_dragging = true;
+        g_touch_last_y = touch.py;
+        return;
+    }
+
+    int dy =
+        (int)touch.py -
+        (int)g_touch_last_y;
+
+    /*
+     * A few pixels of finger movement scroll one message. This
+     * feels much more usable on the small 3DS touch panel than
+     * moving a huge continuous pixel offset.
+     */
+    if (dy >= 8 || dy <= -8)
+    {
+        int steps = dy / 8;
+
+        /*
+         * Finger moving upward reveals older messages.
+         */
+        g_message_scroll += steps;
+
+        if (g_message_scroll < 0)
+            g_message_scroll = 0;
+
+        /*
+         * Keep enough room for the visible cards.
+         */
+        int max_scroll =
+            g_message_count > 4
+                ? g_message_count - 4
+                : 0;
+
+        if (g_message_scroll > max_scroll)
+            g_message_scroll = max_scroll;
+
+        g_touch_last_y = touch.py;
     }
 }
 
@@ -980,9 +1111,11 @@ int main(void)
 {
     gfxInitDefault();
 
-    u8* socbuf = (u8*)memalign(0x1000, 0x100000);
+    u8* socbuf =
+        (u8*)memalign(0x1000, 0x100000);
 
-    if (!socbuf || socInit((u32*)socbuf, 0x100000) != 0)
+    if (!socbuf ||
+        socInit((u32*)socbuf, 0x100000) != 0)
     {
         free(socbuf);
         gfxExit();
@@ -991,8 +1124,6 @@ int main(void)
 
     if (C3D_Init(C3D_DEFAULT_CMDBUF_SIZE) == 0)
     {
-        socExit();
-        free(socbuf);
         gfxExit();
         return 1;
     }
@@ -1097,8 +1228,20 @@ int main(void)
         if (kDown & (KEY_DDOWN | KEY_CPAD_DOWN))
             move_selection(+1);
 
+        u32 kHeld =
+            hidKeysHeld();
+
         if (kDown & KEY_TOUCH)
+        {
             handle_touch();
+        }
+
+        handle_touch_drag(
+            (kHeld & KEY_TOUCH) != 0
+        );
+
+        if (!(kHeld & KEY_TOUCH))
+            g_touch_dragging = false;
 
         C3D_FrameBegin(
             C3D_FRAME_SYNCDRAW
