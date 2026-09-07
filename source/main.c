@@ -146,7 +146,7 @@ int main(void)
 	consoleInit(GFX_TOP, &topConsole);
 	consoleInit(GFX_BOTTOM, &bottomConsole);
 
-	wa_set_bridge_url("http://192.168.1.100:8080");
+	wa_set_bridge_url("http://192.168.178.145:8080");
 
 	refresh_data();
 

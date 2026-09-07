@@ -7,7 +7,7 @@ on:
 
 jobs:
   build:
-    name: Build BVG Navigator
+    name: Build nchat 3DS
     runs-on: ubuntu-latest
 
     permissions:
@@ -19,9 +19,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Host UI tests
-        run: sh test/run.sh
 
       - name: Install 3DS curl portlib
         run: |
@@ -47,13 +44,13 @@ jobs:
       - name: Build
         run: |
           make -j$(nproc)
-          make bvg-navigator.cia
+          make nchat-3ds.cia
 
       - name: Generate QR code for the .cia download
         if: github.ref == 'refs/heads/main'
         uses: VeyronSakai/qr-code-generator@v0.2.2
         with:
-          text: https://github.com/${{ github.repository }}/releases/download/nightly/bvg-navigator.cia
+          text: https://github.com/${{ github.repository }}/releases/download/nightly/nchat-3ds.cia
           output-path: qrcode.png
           width: 512
           margin: 4
@@ -67,10 +64,10 @@ jobs:
           body: |
             Automatically built from the `main` branch.
 
-            Install `bvg-navigator.cia` on your 3DS with FBI (via SD card or by scanning `qrcode.png`). The QR code points directly at the `.cia` download.
+            Install `nchat-3ds.cia` on your 3DS with FBI (via SD card or by scanning `qrcode.png`). The QR code points directly at the `.cia` download.
           files: |
-            bvg-navigator.cia
-            bvg-navigator.smdh
+            nchat-3ds.cia
+            nchat-3ds.smdh
             qrcode.png
           fail_on_unmatched_files: true
           allowUpdates: true
