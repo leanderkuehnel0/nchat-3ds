@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <malloc.h>
 #include <string.h>
 
 #include <3ds.h>
@@ -979,8 +980,19 @@ int main(void)
 {
     gfxInitDefault();
 
+    u8* socbuf = (u8*)memalign(0x1000, 0x100000);
+
+    if (!socbuf || socInit((u32*)socbuf, 0x100000) != 0)
+    {
+        free(socbuf);
+        gfxExit();
+        return 1;
+    }
+
     if (C3D_Init(C3D_DEFAULT_CMDBUF_SIZE) == 0)
     {
+        socExit();
+        free(socbuf);
         gfxExit();
         return 1;
     }
@@ -988,6 +1000,8 @@ int main(void)
     if (C2D_Init(C2D_DEFAULT_MAX_OBJECTS) == 0)
     {
         C3D_Fini();
+        socExit();
+        free(socbuf);
         gfxExit();
         return 1;
     }
@@ -1018,6 +1032,8 @@ int main(void)
 
         C2D_Fini();
         C3D_Fini();
+        socExit();
+        free(socbuf);
         gfxExit();
         return 1;
     }
@@ -1054,6 +1070,8 @@ int main(void)
         C2D_TextBufDelete(g_textbuf);
         C2D_Fini();
         C3D_Fini();
+        socExit();
+        free(socbuf);
         gfxExit();
         return 1;
     }
@@ -1119,6 +1137,10 @@ int main(void)
 
     C2D_Fini();
     C3D_Fini();
+
+    socExit();
+    free(socbuf);
+
     gfxExit();
 
     return 0;
