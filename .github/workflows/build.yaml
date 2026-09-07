@@ -14,22 +14,11 @@ jobs:
       contents: write
 
     container:
-      image: devkitpro/devkitarm
+      image: devkitpro/3dsdev
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Install 3DS curl portlib
-        run: |
-          for i in 1 2 3 4 5; do
-            if dkp-pacman -Syu --noconfirm && dkp-pacman -S --noconfirm --needed 3ds-curl; then
-              exit 0
-            fi
-            echo "pacman sync failed (attempt $i/5), retrying in 15s..."
-            sleep 15
-          done
-          exit 1
 
       - name: Install makerom
         run: |
