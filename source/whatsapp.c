@@ -20,29 +20,42 @@ static void copy_json_string(
 
     dst[0] = '\0';
 
-    if (!node || node->type != JSON_STRING)
+    if (!node ||
+        node->type != JSON_STRING)
+    {
         return;
+    }
 
-    const char* src = json_string(node);
+    const char* src =
+        json_string(node);
 
     if (!src)
         return;
 
-    strncpy(dst, src, dst_size - 1);
+    strncpy(
+        dst,
+        src,
+        dst_size - 1
+    );
+
     dst[dst_size - 1] = '\0';
 }
 
-static int http_status_error(u32 status)
+static int http_status_error(
+    u32 status
+)
 {
-    if (status >= 200 && status < 300)
+    if (status >= 200 &&
+        status < 300)
+    {
         return 0;
+    }
 
-    /*
-     * Keep negative values reserved for client-side failures while
-     * still exposing the HTTP status to the caller.
-     */
-    if (status > 0 && status <= 999)
+    if (status > 0 &&
+        status <= 999)
+    {
         return -(int)status;
+    }
 
     return -1;
 }
@@ -53,8 +66,11 @@ static size_t json_escape_copy(
     const char* src
 )
 {
-    if (!dst || dst_size == 0)
+    if (!dst ||
+        dst_size == 0)
+    {
         return 0;
+    }
 
     if (!src)
     {
@@ -69,13 +85,15 @@ static size_t json_escape_copy(
          *p != '\0';
          ++p)
     {
-        const char c = (char)*p;
+        const char c =
+            (char)*p;
 
-        const char* replacement = NULL;
+        const char* replacement =
+            NULL;
 
         switch (c)
         {
-            case '\"':
+            case '"':
                 replacement = "\\\"";
                 break;
 
@@ -109,12 +127,18 @@ static size_t json_escape_copy(
 
         if (replacement)
         {
-            size_t len = strlen(replacement);
+            size_t len =
+                strlen(replacement);
 
             if (used + len >= dst_size)
                 break;
 
-            memcpy(dst + used, replacement, len);
+            memcpy(
+                dst + used,
+                replacement,
+                len
+            );
+
             used += len;
         }
         else
@@ -127,10 +151,83 @@ static size_t json_escape_copy(
     }
 
     dst[used] = '\0';
+
     return used;
 }
 
-void wa_set_bridge_url(const char* url)
+static size_t url_encode_chat_id(
+    char* dst,
+    size_t dst_size,
+    const char* src
+)
+{
+    static const char hex[] =
+        "0123456789ABCDEF";
+
+    if (!dst ||
+        dst_size == 0)
+    {
+        return 0;
+    }
+
+    if (!src)
+    {
+        dst[0] = '\0';
+        return 0;
+    }
+
+    size_t used = 0;
+
+    for (const unsigned char* p =
+             (const unsigned char*)src;
+         *p != '\0';
+         ++p)
+    {
+        unsigned char c = *p;
+
+        /*
+         * WhatsApp JIDs commonly contain @ and :.
+         * These are valid in a query value and don't need encoding.
+         */
+        bool safe =
+            (c >= 'A' && c <= 'Z') ||
+            (c >= 'a' && c <= 'z') ||
+            (c >= '0' && c <= '9') ||
+            c == '-' ||
+            c == '_' ||
+            c == '.' ||
+            c == '~' ||
+            c == '@' ||
+            c == ':';
+
+        if (safe)
+        {
+            if (used + 1 >= dst_size)
+                break;
+
+            dst[used++] = (char)c;
+        }
+        else
+        {
+            if (used + 3 >= dst_size)
+                break;
+
+            dst[used++] = '%';
+            dst[used++] =
+                hex[(c >> 4) & 0x0F];
+            dst[used++] =
+                hex[c & 0x0F];
+        }
+    }
+
+    dst[used] = '\0';
+
+    return used;
+}
+
+void wa_set_bridge_url(
+    const char* url
+)
 {
     if (!url)
         return;
@@ -141,7 +238,9 @@ void wa_set_bridge_url(const char* url)
         sizeof(g_bridge_url) - 1
     );
 
-    g_bridge_url[sizeof(g_bridge_url) - 1] = '\0';
+    g_bridge_url[
+        sizeof(g_bridge_url) - 1
+    ] = '\0';
 }
 
 int wa_get_chats(
@@ -149,8 +248,11 @@ int wa_get_chats(
     int max_chats
 )
 {
-    if (!out_chats || max_chats <= 0)
+    if (!out_chats ||
+        max_chats <= 0)
+    {
         return 0;
+    }
 
     char url[512];
 
@@ -164,24 +266,29 @@ int wa_get_chats(
     u32 status = 0;
     u32 err = 0;
 
-    char* resp = http_get(
-        url,
-        &status,
-        &err
-    );
+    char* resp =
+        http_get(
+            url,
+            &status,
+            &err
+        );
 
     if (!resp)
-        return err ? -(int)err : -1;
+        return err
+             ? -(int)err
+             : -1;
 
-    int result = http_status_error(status);
+    int status_error =
+        http_status_error(status);
 
-    if (result != 0)
+    if (status_error != 0)
     {
         free(resp);
-        return result;
+        return status_error;
     }
 
-    JsonNode* root = json_parse(resp);
+    JsonNode* root =
+        json_parse(resp);
 
     free(resp);
 
@@ -194,21 +301,27 @@ int wa_get_chats(
         return -2;
     }
 
-    const int total = json_array_len(root);
+    const int total =
+        json_array_len(root);
 
     int written = 0;
 
     for (int i = 0;
-         i < total && written < max_chats;
+         i < total &&
+         written < max_chats;
          ++i)
     {
         const JsonNode* item =
             json_array_at(root, i);
 
-        if (!item || item->type != JSON_OBJECT)
+        if (!item ||
+            item->type != JSON_OBJECT)
+        {
             continue;
+        }
 
-        WAChat* chat = &out_chats[written];
+        WAChat* chat =
+            &out_chats[written];
 
         memset(
             chat,
@@ -219,27 +332,39 @@ int wa_get_chats(
         copy_json_string(
             chat->id,
             sizeof(chat->id),
-            json_object_get(item, "id")
+            json_object_get(
+                item,
+                "id"
+            )
         );
 
         copy_json_string(
             chat->name,
             sizeof(chat->name),
-            json_object_get(item, "name")
+            json_object_get(
+                item,
+                "name"
+            )
         );
 
         const JsonNode* unread_node =
-            json_object_get(item, "unread");
+            json_object_get(
+                item,
+                "unread"
+            );
 
         double unread = 0;
 
         if (unread_node)
+        {
             json_number(
                 unread_node,
                 &unread
             );
+        }
 
-        chat->unread = (int)unread;
+        chat->unread =
+            (int)unread;
 
         ++written;
     }
@@ -262,52 +387,15 @@ int wa_get_messages(
         return 0;
     }
 
-    /*
-     * Current WhatsApp JIDs used by the bridge are URL-safe enough
-     * for the existing endpoint, but encode characters that have
-     * special URL meaning.
-     */
-    char encoded_chat_id[WA_ID_LEN * 3];
-    size_t encoded_used = 0;
+    char encoded_id[
+        WA_ID_LEN * 3
+    ];
 
-    for (const unsigned char* p =
-             (const unsigned char*)chat_id;
-         *p != '\0' &&
-         encoded_used + 3 < sizeof(encoded_chat_id);
-         ++p)
-    {
-        const unsigned char c = *p;
-
-        if ((c >= 'A' && c <= 'Z') ||
-            (c >= 'a' && c <= 'z') ||
-            (c >= '0' && c <= '9') ||
-            c == '-' || c == '_' ||
-            c == '.' || c == '~' ||
-            c == '@' || c == ':')
-        {
-            encoded_chat_id[encoded_used++] =
-                (char)c;
-        }
-        else
-        {
-            static const char hex[] =
-                "0123456789ABCDEF";
-
-            if (encoded_used + 3 >=
-                sizeof(encoded_chat_id))
-            {
-                break;
-            }
-
-            encoded_chat_id[encoded_used++] = '%';
-            encoded_chat_id[encoded_used++] =
-                hex[(c >> 4) & 0x0F];
-            encoded_chat_id[encoded_used++] =
-                hex[c & 0x0F];
-        }
-    }
-
-    encoded_chat_id[encoded_used] = '\0';
+    url_encode_chat_id(
+        encoded_id,
+        sizeof(encoded_id),
+        chat_id
+    );
 
     char url[512];
 
@@ -316,30 +404,35 @@ int wa_get_messages(
         sizeof(url),
         "%s/api/messages?chatId=%s",
         g_bridge_url,
-        encoded_chat_id
+        encoded_id
     );
 
     u32 status = 0;
     u32 err = 0;
 
-    char* resp = http_get(
-        url,
-        &status,
-        &err
-    );
+    char* resp =
+        http_get(
+            url,
+            &status,
+            &err
+        );
 
     if (!resp)
-        return err ? -(int)err : -1;
+        return err
+             ? -(int)err
+             : -1;
 
-    int result = http_status_error(status);
+    int status_error =
+        http_status_error(status);
 
-    if (result != 0)
+    if (status_error != 0)
     {
         free(resp);
-        return result;
+        return status_error;
     }
 
-    JsonNode* root = json_parse(resp);
+    JsonNode* root =
+        json_parse(resp);
 
     free(resp);
 
@@ -352,19 +445,24 @@ int wa_get_messages(
         return -2;
     }
 
-    const int total = json_array_len(root);
+    const int total =
+        json_array_len(root);
 
     int written = 0;
 
     for (int i = 0;
-         i < total && written < max_messages;
+         i < total &&
+         written < max_messages;
          ++i)
     {
         const JsonNode* item =
             json_array_at(root, i);
 
-        if (!item || item->type != JSON_OBJECT)
+        if (!item ||
+            item->type != JSON_OBJECT)
+        {
             continue;
+        }
 
         WAMessage* message =
             &out_messages[written];
@@ -378,23 +476,35 @@ int wa_get_messages(
         copy_json_string(
             message->id,
             sizeof(message->id),
-            json_object_get(item, "id")
+            json_object_get(
+                item,
+                "id"
+            )
         );
 
         copy_json_string(
             message->sender,
             sizeof(message->sender),
-            json_object_get(item, "sender")
+            json_object_get(
+                item,
+                "sender"
+            )
         );
 
         copy_json_string(
             message->text,
             sizeof(message->text),
-            json_object_get(item, "text")
+            json_object_get(
+                item,
+                "text"
+            )
         );
 
         const JsonNode* isme_node =
-            json_object_get(item, "isMe");
+            json_object_get(
+                item,
+                "isMe"
+            );
 
         message->isMe =
             (isme_node &&
@@ -415,7 +525,8 @@ int wa_send_message(
     const char* text
 )
 {
-    if (!chat_id || !text ||
+    if (!chat_id ||
+        !text ||
         chat_id[0] == '\0' ||
         text[0] == '\0')
     {
@@ -431,13 +542,13 @@ int wa_send_message(
         g_bridge_url
     );
 
-    /*
-     * Escape user input before embedding it into JSON.
-     * This fixes messages containing quotes, backslashes,
-     * or line breaks.
-     */
-    char escaped_chat_id[WA_ID_LEN * 2];
-    char escaped_text[WA_TEXT_LEN * 2];
+    char escaped_chat_id[
+        WA_ID_LEN * 2
+    ];
+
+    char escaped_text[
+        WA_TEXT_LEN * 2
+    ];
 
     json_escape_copy(
         escaped_chat_id,
@@ -457,13 +568,14 @@ int wa_send_message(
         64
     ];
 
-    int written = snprintf(
-        body,
-        sizeof(body),
-        "{\"chatId\":\"%s\",\"text\":\"%s\"}",
-        escaped_chat_id,
-        escaped_text
-    );
+    int written =
+        snprintf(
+            body,
+            sizeof(body),
+            "{\"chatId\":\"%s\",\"text\":\"%s\"}",
+            escaped_chat_id,
+            escaped_text
+        );
 
     if (written < 0 ||
         (size_t)written >= sizeof(body))
@@ -474,19 +586,23 @@ int wa_send_message(
     u32 status = 0;
     u32 err = 0;
 
-    char* resp = http_post(
-        url,
-        body,
-        &status,
-        &err
-    );
+    char* resp =
+        http_post(
+            url,
+            body,
+            &status,
+            &err
+        );
 
     if (!resp)
-        return err ? -(int)err : -1;
+        return err
+             ? -(int)err
+             : -1;
 
-    int result = http_status_error(status);
+    int status_error =
+        http_status_error(status);
 
     free(resp);
 
-    return result;
+    return status_error;
 }

@@ -1,0 +1,11 @@
+Bridge server listening on port 8080
+/home/andi/Documents/coding/nchat-3ds/bridge/node_modules/puppeteer-core/lib/cjs/puppeteer/node/BrowserLauncher.js:175
+                throw new Error(`The browser is already running for ${launchArgs.userDataDir}. Use a different \`userDataDir\` or stop the running browser first.`);
+                      ^
+
+Error: The browser is already running for /home/andi/Documents/coding/nchat-3ds/bridge/.wwebjs_auth/session. Use a different `userDataDir` or stop the running browser first.
+    at ChromeLauncher.launch (/home/andi/Documents/coding/nchat-3ds/bridge/node_modules/puppeteer-core/lib/cjs/puppeteer/node/BrowserLauncher.js:175:23)
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at async Client.initialize (/home/andi/Documents/coding/nchat-3ds/bridge/node_modules/whatsapp-web.js/src/Client.js:462:23)
+
+Node.js v22.23.2
