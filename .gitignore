@@ -1,0 +1,16 @@
+# devkitARM / 3ds build output
+build/
+*.3dsx
+*.elf
+*.smdh
+*.cia
+*.rsf.out
+*.map
+
+# host test bench artifacts
+test/uitest
+test/*.o
+
+# editor / OS noise
+*.swp
+.DS_Store

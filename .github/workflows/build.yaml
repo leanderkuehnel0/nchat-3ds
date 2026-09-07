@@ -1,0 +1,78 @@
+name: Build 3DS application
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build BVG Navigator
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    container:
+      image: devkitpro/devkitarm
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Host UI tests
+        run: sh test/run.sh
+
+      - name: Install 3DS curl portlib
+        run: |
+          for i in 1 2 3 4 5; do
+            if dkp-pacman -Syu --noconfirm && dkp-pacman -S --noconfirm --needed 3ds-curl; then
+              exit 0
+            fi
+            echo "pacman sync failed (attempt $i/5), retrying in 15s..."
+            sleep 15
+          done
+          exit 1
+
+      - name: Install makerom
+        run: |
+          curl -L --fail --retry 5 --retry-all-errors -o /tmp/makerom.zip https://github.com/3DSGuy/Project_CTR/releases/download/makerom-v0.18.4/makerom-v0.18.4-ubuntu_x86_64.zip
+          if command -v unzip >/dev/null 2>&1; then
+            unzip -o /tmp/makerom.zip -d /usr/local/bin
+          else
+            python3 -c "import zipfile; zipfile.ZipFile('/tmp/makerom.zip').extractall('/usr/local/bin')"
+          fi
+          chmod +x /usr/local/bin/makerom
+
+      - name: Build
+        run: |
+          make -j$(nproc)
+          make bvg-navigator.cia
+
+      - name: Generate QR code for the .cia download
+        if: github.ref == 'refs/heads/main'
+        uses: VeyronSakai/qr-code-generator@v0.2.2
+        with:
+          text: https://github.com/${{ github.repository }}/releases/download/nightly/bvg-navigator.cia
+          output-path: qrcode.png
+          width: 512
+          margin: 4
+
+      - name: Publish .cia as rolling release
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: nightly
+          name: Nightly build (main)
+          body: |
+            Automatically built from the `main` branch.
+
+            Install `bvg-navigator.cia` on your 3DS with FBI (via SD card or by scanning `qrcode.png`). The QR code points directly at the `.cia` download.
+          files: |
+            bvg-navigator.cia
+            bvg-navigator.smdh
+            qrcode.png
+          fail_on_unmatched_files: true
+          allowUpdates: true
+          makeLatest: true
+          generate_release_notes: false
