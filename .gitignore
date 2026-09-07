@@ -19,3 +19,4 @@ test/*.o
 bridge/node_modules/
 bridge/.wwebjs_auth/
 bridge/.wwebjs_cache/
+bridge/bridge/go_bridge/bridge.db
