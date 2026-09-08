@@ -7,7 +7,7 @@
 #include <string.h>
 
 static char g_bridge_url[256] =
-    "http://192.168.178.145:8080";
+    "http://192.168.0.67:8080";
 
 static void copy_json_string(
     char* dst,
