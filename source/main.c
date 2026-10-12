@@ -239,12 +239,124 @@ static void draw_header(
     );
 }
 
+static void bridge_host(
+    char* out,
+    size_t out_size
+)
+{
+    const char* url = wa_get_bridge_url();
+    const char* start = url;
+    const char* end;
+    size_t length;
+
+    if (!out || out_size == 0)
+        return;
+
+    out[0] = '\0';
+
+    if (!url || !*url)
+        return;
+
+    const char* scheme = strstr(url, "://");
+    if (scheme)
+        start = scheme + 3;
+
+    end = start;
+    while (*end && *end != ':' && *end != '/')
+        ++end;
+
+    length = (size_t)(end - start);
+    if (length >= out_size)
+        length = out_size - 1;
+
+    memcpy(out, start, length);
+    out[length] = '\0';
+}
+
+static void render_connection_top(void)
+{
+    char host[64];
+
+    bridge_host(host, sizeof(host));
+
+    C2D_TargetClear(g_top_target, COL_BG);
+    C2D_SceneBegin(g_top_target);
+
+    draw_header("Connection", true);
+
+    draw_text_center(
+        "Connecting to bridge",
+        TOP_W * 0.5f,
+        78,
+        0.62f,
+        COL_TEXT
+    );
+
+    draw_text_center(
+        "Status: Connecting...",
+        TOP_W * 0.5f,
+        111,
+        0.52f,
+        COL_MUTED
+    );
+
+    draw_text_center(
+        host[0] ? host : "Unknown host",
+        TOP_W * 0.5f,
+        145,
+        0.66f,
+        COL_ACCENT
+    );
+}
+
+static void render_connection_bottom(void)
+{
+    char host[64];
+
+    bridge_host(host, sizeof(host));
+
+    C2D_TargetClear(g_bottom_target, COL_BG);
+    C2D_SceneBegin(g_bottom_target);
+
+    draw_header("Connection details", false);
+
+    draw_text_center(
+        "Attempting to connect to:",
+        BOT_W * 0.5f,
+        72,
+        0.50f,
+        COL_MUTED
+    );
+
+    draw_text_center(
+        host[0] ? host : "Unknown host",
+        BOT_W * 0.5f,
+        106,
+        0.72f,
+        COL_ACCENT
+    );
+
+    draw_text_center(
+        "Please wait...",
+        BOT_W * 0.5f,
+        151,
+        0.52f,
+        COL_MUTED
+    );
+}
+
 /* ============================================================
  * UI rendering
  * ============================================================ */
 
 static void render_top(void)
 {
+    if (g_loading && g_chat_count == 0)
+    {
+        render_connection_top();
+        return;
+    }
+
     C2D_TargetClear(
         g_top_target,
         COL_BG
@@ -434,6 +546,12 @@ static void draw_message_card(
 
 static void render_bottom(void)
 {
+    if (g_loading && g_chat_count == 0)
+    {
+        render_connection_bottom();
+        return;
+    }
+
     C2D_TargetClear(
         g_bottom_target,
         COL_BG
