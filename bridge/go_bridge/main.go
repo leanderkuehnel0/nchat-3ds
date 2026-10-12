@@ -17,8 +17,8 @@ import (
 
 	_ "github.com/mattn/go-sqlite3"
 
-	waProto "go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow"
+	waProto "go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/store/sqlstore"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
@@ -365,11 +365,11 @@ func (s *Server) handleIncomingMessage(evt *events.Message) {
 	// Save/update chat
 	// --------------------------------------------------------
 
-	chatName := sender
-
-	if isGroup {
-		chatName = chatID
-	}
+	chatName := s.chatName(
+		context.Background(),
+		info.Chat,
+		sender,
+	)
 
 	_, err := s.db.Exec(`
 		INSERT INTO chats (
@@ -436,6 +436,38 @@ func (s *Server) handleIncomingMessage(evt *events.Message) {
 		sender,
 		text,
 	)
+}
+
+func (s *Server) chatName(
+	ctx context.Context,
+	chatJID types.JID,
+	fallback string,
+) string {
+	if chatJID.Server == types.GroupServer {
+		group, err := s.client.GetGroupInfo(ctx, chatJID)
+		if err == nil && group != nil && group.Name != "" {
+			return group.Name
+		}
+	} else {
+		contact, err := s.client.Store.Contacts.GetContact(ctx, chatJID)
+		if err == nil && contact.Found {
+			if contact.FullName != "" {
+				return contact.FullName
+			}
+			if contact.FirstName != "" {
+				return contact.FirstName
+			}
+			if contact.PushName != "" {
+				return contact.PushName
+			}
+		}
+	}
+
+	if fallback == "" || fallback == "You" {
+		return chatJID.String()
+	}
+
+	return fallback
 }
 
 // ============================================================
@@ -588,6 +620,30 @@ func (s *Server) handleChats(
 		}
 
 		c.IsGroup = isGroup != 0
+
+		chatJID, parseErr := types.ParseJID(c.ID)
+		if parseErr == nil {
+			resolvedName := s.chatName(
+				r.Context(),
+				chatJID,
+				"",
+			)
+
+			if resolvedName != "" && resolvedName != c.Name {
+				c.Name = resolvedName
+
+				_, err := s.db.Exec(
+					"UPDATE chats SET name = ? WHERE id = ?",
+					c.Name,
+					c.ID,
+				)
+
+				if err != nil {
+					writeError(w, err)
+					return
+				}
+			}
+		}
 
 		if c.Name == "" {
 			c.Name = c.ID
