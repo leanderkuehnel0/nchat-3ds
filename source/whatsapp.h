@@ -25,9 +25,6 @@ typedef struct {
 /* Set the base URL for the bridge API */
 void wa_set_bridge_url(const char* url);
 
-/* Get the base URL currently used for bridge requests */
-const char* wa_get_bridge_url(void);
-
 /* Fetch chats. Returns number of chats or <0 on error */
 int wa_get_chats(WAChat* out_chats, int max_chats);
 

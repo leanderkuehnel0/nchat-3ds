@@ -8,6 +8,27 @@
 
 static char g_bridge_url[256] =
     "http://127.0.0.1:8080";
+static LightLock g_bridge_lock;
+static bool g_bridge_lock_ready = false;
+
+static void copy_bridge_url(
+    char* out,
+    size_t out_size
+)
+{
+    if (!out || out_size == 0)
+        return;
+
+    if (!g_bridge_lock_ready)
+    {
+        out[0] = '\0';
+        return;
+    }
+
+    LightLock_Lock(&g_bridge_lock);
+    snprintf(out, out_size, "%s", g_bridge_url);
+    LightLock_Unlock(&g_bridge_lock);
+}
 
 static void copy_json_string(
     char* dst,
@@ -232,6 +253,13 @@ void wa_set_bridge_url(
     if (!url)
         return;
 
+    if (!g_bridge_lock_ready)
+    {
+        LightLock_Init(&g_bridge_lock);
+        g_bridge_lock_ready = true;
+    }
+
+    LightLock_Lock(&g_bridge_lock);
     strncpy(
         g_bridge_url,
         url,
@@ -241,11 +269,7 @@ void wa_set_bridge_url(
     g_bridge_url[
         sizeof(g_bridge_url) - 1
     ] = '\0';
-}
-
-const char* wa_get_bridge_url(void)
-{
-    return g_bridge_url;
+    LightLock_Unlock(&g_bridge_lock);
 }
 
 int wa_get_chats(
@@ -259,13 +283,16 @@ int wa_get_chats(
         return 0;
     }
 
+    char bridge_url[256];
     char url[512];
+
+    copy_bridge_url(bridge_url, sizeof(bridge_url));
 
     snprintf(
         url,
         sizeof(url),
         "%s/api/chats",
-        g_bridge_url
+        bridge_url
     );
 
     u32 status = 0;
@@ -402,13 +429,16 @@ int wa_get_messages(
         chat_id
     );
 
+    char bridge_url[256];
     char url[512];
+
+    copy_bridge_url(bridge_url, sizeof(bridge_url));
 
     snprintf(
         url,
         sizeof(url),
         "%s/api/messages?chatId=%s",
-        g_bridge_url,
+        bridge_url,
         encoded_id
     );
 
@@ -538,13 +568,16 @@ int wa_send_message(
         return -3;
     }
 
+    char bridge_url[256];
     char url[512];
+
+    copy_bridge_url(bridge_url, sizeof(bridge_url));
 
     snprintf(
         url,
         sizeof(url),
         "%s/api/messages",
-        g_bridge_url
+        bridge_url
     );
 
     char escaped_chat_id[

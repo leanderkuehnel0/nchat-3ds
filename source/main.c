@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <malloc.h>
 #include <string.h>
+#include <ctype.h>
 
 #include <3ds.h>
 #include <citro2d.h>
@@ -50,6 +51,8 @@ static Thread g_sync_thread;
 static volatile bool g_running = true;
 
 static bool g_loading = true;
+static bool g_settings_open = false;
+static int g_settings_field = 0;
 static bool g_send_failed = false;
 static bool g_send_pending = false;
 static int g_last_error = 0;
@@ -65,6 +68,11 @@ static u64 g_last_data_update = 0;
 static int g_message_scroll = 0;
 static bool g_touch_dragging = false;
 static u16 g_touch_last_y = 0;
+
+static char g_server_host[64] = "192.168.0.67";
+static int g_server_port = 8080;
+
+static void request_sync(void);
 
 /* ============================================================
  * Colors
@@ -244,33 +252,167 @@ static void bridge_host(
     size_t out_size
 )
 {
-    const char* url = wa_get_bridge_url();
-    const char* start = url;
-    const char* end;
-    size_t length;
-
     if (!out || out_size == 0)
         return;
 
-    out[0] = '\0';
+    snprintf(out, out_size, "%s", g_server_host);
+}
 
-    if (!url || !*url)
+static void bridge_url(
+    char* out,
+    size_t out_size
+)
+{
+    if (!out || out_size == 0)
         return;
 
-    const char* scheme = strstr(url, "://");
-    if (scheme)
-        start = scheme + 3;
+    snprintf(
+        out,
+        out_size,
+        "http://%s:%d",
+        g_server_host,
+        g_server_port
+    );
+}
 
-    end = start;
-    while (*end && *end != ':' && *end != '/')
-        ++end;
+static bool valid_ipv4(
+    const char* text
+)
+{
+    int parts = 0;
+    int value = 0;
+    bool has_digit = false;
 
-    length = (size_t)(end - start);
-    if (length >= out_size)
-        length = out_size - 1;
+    if (!text || !*text)
+        return false;
 
-    memcpy(out, start, length);
-    out[length] = '\0';
+    for (const char* p = text; ; ++p)
+    {
+        if (isdigit((unsigned char)*p))
+        {
+            value = value * 10 + (*p - '0');
+            if (value > 255)
+                return false;
+            has_digit = true;
+        }
+        else if (*p == '.' || *p == '\0')
+        {
+            if (!has_digit || ++parts > 4)
+                return false;
+
+            if (*p == '\0')
+                return parts == 4;
+
+            value = 0;
+            has_digit = false;
+        }
+        else
+        {
+            return false;
+        }
+    }
+}
+
+static bool valid_port(
+    const char* text,
+    int* port_out
+)
+{
+    long value = 0;
+
+    if (!text || !*text)
+        return false;
+
+    for (const char* p = text; *p; ++p)
+    {
+        if (!isdigit((unsigned char)*p))
+            return false;
+
+        value = value * 10 + (*p - '0');
+        if (value > 65535)
+            return false;
+    }
+
+    if (value < 1)
+        return false;
+
+    if (port_out)
+        *port_out = (int)value;
+
+    return true;
+}
+
+static void apply_server_settings(void)
+{
+    char url[256];
+
+    bridge_url(url, sizeof(url));
+    wa_set_bridge_url(url);
+
+    LightLock_Lock(&g_data_lock);
+    g_chat_count = 0;
+    g_message_count = 0;
+    g_selected_chat = 0;
+    g_message_scroll = 0;
+    g_loading = true;
+    g_last_error = 0;
+    LightLock_Unlock(&g_data_lock);
+
+    request_sync();
+}
+
+static void edit_server_setting(void)
+{
+    SwkbdState swkbd;
+    char value[64] = {0};
+
+    if (g_settings_field == 0)
+    {
+        snprintf(value, sizeof(value), "%s", g_server_host);
+        swkbdInit(&swkbd, SWKBD_TYPE_NORMAL, 2, -1);
+        swkbdSetHintText(&swkbd, "IPv4 address");
+    }
+    else
+    {
+        snprintf(value, sizeof(value), "%d", g_server_port);
+        swkbdInit(&swkbd, SWKBD_TYPE_NUMPAD, 2, -1);
+        swkbdSetHintText(&swkbd, "Port 1-65535");
+    }
+
+    swkbdSetValidation(
+        &swkbd,
+        SWKBD_NOTEMPTY_NOTBLANK,
+        0,
+        0
+    );
+
+    swkbdSetFeatures(&swkbd, SWKBD_DARKEN_TOP_SCREEN);
+
+    if (swkbdInputText(&swkbd, value, sizeof(value)) !=
+        SWKBD_BUTTON_CONFIRM)
+    {
+        return;
+    }
+
+    if (g_settings_field == 0)
+    {
+        if (!valid_ipv4(value))
+            return;
+
+        strncpy(g_server_host, value, sizeof(g_server_host) - 1);
+        g_server_host[sizeof(g_server_host) - 1] = '\0';
+    }
+    else
+    {
+        int port;
+
+        if (!valid_port(value, &port))
+            return;
+
+        g_server_port = port;
+    }
+
+    apply_server_settings();
 }
 
 static void render_connection_top(void)
@@ -306,6 +448,14 @@ static void render_connection_top(void)
         145,
         0.66f,
         COL_ACCENT
+    );
+
+    draw_text_center(
+        "SELECT: server settings",
+        TOP_W * 0.5f,
+        184,
+        0.42f,
+        COL_MUTED
     );
 }
 
@@ -343,6 +493,80 @@ static void render_connection_bottom(void)
         0.52f,
         COL_MUTED
     );
+
+    draw_text_center(
+        "SELECT: server settings",
+        BOT_W * 0.5f,
+        188,
+        0.42f,
+        COL_MUTED
+    );
+}
+
+static void render_settings_top(void)
+{
+    char port[12];
+
+    snprintf(port, sizeof(port), "%d", g_server_port);
+
+    C2D_TargetClear(g_top_target, COL_BG);
+    C2D_SceneBegin(g_top_target);
+
+    draw_header("Settings", true);
+    draw_text("Server", 18, 48, 0.52f, COL_MUTED);
+
+    draw_text(
+        g_settings_field == 0 ? "> IP address" : "  IP address",
+        22, 78, 0.52f,
+        g_settings_field == 0 ? COL_ACCENT : COL_TEXT
+    );
+    draw_text(g_server_host, 170, 78, 0.52f, COL_TEXT);
+
+    draw_text(
+        g_settings_field == 1 ? "> Port" : "  Port",
+        22, 116, 0.52f,
+        g_settings_field == 1 ? COL_ACCENT : COL_TEXT
+    );
+    draw_text(port, 170, 116, 0.52f, COL_TEXT);
+
+    draw_text_center(
+        "A: edit   D-pad: select   B: close",
+        TOP_W * 0.5f, 178, 0.42f, COL_MUTED
+    );
+}
+
+static void render_settings_bottom(void)
+{
+    char target[80];
+
+    snprintf(
+        target,
+        sizeof(target),
+        "%s:%d",
+        g_server_host,
+        g_server_port
+    );
+
+    C2D_TargetClear(g_bottom_target, COL_BG);
+    C2D_SceneBegin(g_bottom_target);
+
+    draw_header("Server settings", false);
+    draw_text_center(
+        "Changes reconnect immediately.",
+        BOT_W * 0.5f, 72, 0.48f, COL_MUTED
+    );
+    draw_text_center(
+        "Current target:",
+        BOT_W * 0.5f, 108, 0.46f, COL_MUTED
+    );
+    draw_text_center(
+        target,
+        BOT_W * 0.5f, 132, 0.66f, COL_ACCENT
+    );
+    draw_text_center(
+        "SELECT: close settings",
+        BOT_W * 0.5f, 190, 0.42f, COL_MUTED
+    );
 }
 
 /* ============================================================
@@ -351,6 +575,12 @@ static void render_connection_bottom(void)
 
 static void render_top(void)
 {
+    if (g_settings_open)
+    {
+        render_settings_top();
+        return;
+    }
+
     if (g_loading && g_chat_count == 0)
     {
         render_connection_top();
@@ -546,6 +776,12 @@ static void draw_message_card(
 
 static void render_bottom(void)
 {
+    if (g_settings_open)
+    {
+        render_settings_bottom();
+        return;
+    }
+
     if (g_loading && g_chat_count == 0)
     {
         render_connection_bottom();
@@ -1296,9 +1532,9 @@ int main(void)
         RESET_STICKY
     );
 
-    wa_set_bridge_url(
-        "http://192.168.0.67:8080"
-    );
+    char initial_url[256];
+    bridge_url(initial_url, sizeof(initial_url));
+    wa_set_bridge_url(initial_url);
 
     /*
      * Start networking before the first frame. The first sync happens
@@ -1334,29 +1570,52 @@ int main(void)
         u32 kDown =
             hidKeysDown();
 
-        if (kDown & KEY_B)
-            break;
+        if (kDown & KEY_SELECT)
+            g_settings_open = !g_settings_open;
 
-        if (kDown & KEY_A)
-            prompt_reply();
+        if (g_settings_open)
+        {
+            if (kDown & KEY_B)
+                g_settings_open = false;
 
-        if (kDown & (KEY_DUP | KEY_CPAD_UP))
-            move_selection(-1);
+            if (kDown & (KEY_DUP | KEY_CPAD_UP))
+                g_settings_field = 0;
 
-        if (kDown & (KEY_DDOWN | KEY_CPAD_DOWN))
-            move_selection(+1);
+            if (kDown & (KEY_DDOWN | KEY_CPAD_DOWN))
+                g_settings_field = 1;
+
+            if (kDown & KEY_A)
+                edit_server_setting();
+        }
+        else
+        {
+            if (kDown & KEY_B)
+                break;
+
+            if (kDown & KEY_A)
+                prompt_reply();
+
+            if (kDown & (KEY_DUP | KEY_CPAD_UP))
+                move_selection(-1);
+
+            if (kDown & (KEY_DDOWN | KEY_CPAD_DOWN))
+                move_selection(+1);
+        }
 
         u32 kHeld =
             hidKeysHeld();
 
-        if (kDown & KEY_TOUCH)
+        if (!g_settings_open && (kDown & KEY_TOUCH))
         {
             handle_touch();
         }
 
-        handle_touch_drag(
-            (kHeld & KEY_TOUCH) != 0
-        );
+        if (!g_settings_open)
+        {
+            handle_touch_drag(
+                (kHeld & KEY_TOUCH) != 0
+            );
+        }
 
         if (!(kHeld & KEY_TOUCH))
             g_touch_dragging = false;
