@@ -243,6 +243,11 @@ void wa_set_bridge_url(
     ] = '\0';
 }
 
+const char* wa_get_bridge_url(void)
+{
+    return g_bridge_url;
+}
+
 int wa_get_chats(
     WAChat* out_chats,
     int max_chats
